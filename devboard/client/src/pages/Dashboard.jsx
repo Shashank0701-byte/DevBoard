@@ -19,6 +19,7 @@ import {
   PrinterIcon,
   TrashIcon,
   KeyboardIcon,
+  MicIcon,
   LogoutIcon,
   FullscreenIcon,
   SparklesIcon,
@@ -29,6 +30,7 @@ import {
 } from "../components/common/Icons";
 import { openVisit, touchVisit } from "../utils/lastVisit";
 import { timeAgo } from "../utils/timeAgo";
+import { parseSpokenTask } from "../utils/voiceTask";
 
 const formatStars = (n) => {
   if (n === null || n === undefined) return null;
@@ -451,6 +453,88 @@ const Dashboard = () => {
     setWeatherStatus("off");
   };
 
+  const [listening, setListening] = useState(false);
+  const recognitionRef = useRef(null);
+  const listeningRef = useRef(false);
+  const handleVoiceRef = useRef(() => {});
+  const voiceBlockedRef = useRef(false);
+
+  const stopVoice = () => {
+    recognitionRef.current?.abort();
+    recognitionRef.current = null;
+    listeningRef.current = false;
+    setListening(false);
+  };
+
+  const handleVoice = () => {
+    const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
+    if (!SpeechRecognition) {
+      toast.error("Voice input isn't supported in this browser. Try Chrome or Edge.");
+      return;
+    }
+
+    if (listeningRef.current) {
+      stopVoice();
+      return;
+    }
+
+    const recognition = new SpeechRecognition();
+    recognition.lang = "en-US";
+    recognition.interimResults = false;
+    recognition.maxAlternatives = 1;
+
+    recognition.onstart = () => {
+      listeningRef.current = true;
+      setListening(true);
+    };
+
+    recognition.onresult = async (event) => {
+      const transcript = event.results[0]?.[0]?.transcript || "";
+      const { title, priority } = parseSpokenTask(transcript);
+      if (!title) {
+        toast.error("Couldn't hear a task title. Try again.");
+        return;
+      }
+      try {
+        await addTask({ title, priority, status: "backlog" });
+        toast.success(`Added "${title}" (${priority})`);
+      } catch {
+        toast.error("Couldn't create that task.");
+      }
+    };
+
+    recognition.onerror = (event) => {
+      if (event.error === "not-allowed" || event.error === "service-not-allowed") {
+        toast.error("Microphone permission was blocked.");
+      } else if (event.error === "no-speech") {
+        toast.error("No speech detected. Try again.");
+      } else if (event.error !== "aborted") {
+        toast.error("Voice input failed. Try again.");
+      }
+    };
+
+    recognition.onend = () => {
+      listeningRef.current = false;
+      setListening(false);
+      if (recognitionRef.current === recognition) recognitionRef.current = null;
+    };
+
+    recognitionRef.current = recognition;
+    try {
+      recognition.start();
+    } catch {
+      toast.error("Couldn't start the microphone.");
+      stopVoice();
+    }
+  };
+
+  handleVoiceRef.current = handleVoice;
+  voiceBlockedRef.current = Boolean(
+    selectedTask || isCreatingFirstTask || showHelp || showWebhookSettings
+  );
+
+  useEffect(() => () => recognitionRef.current?.abort(), []);
+
   const [searchHistory, setSearchHistory] = useState(() => {
     try {
       const saved = JSON.parse(localStorage.getItem("search_history") || "[]");
@@ -462,7 +546,25 @@ const Dashboard = () => {
 
   useEffect(() => {
     const handler = (e) => {
-      if (e.target.matches("input, textarea")) return;
+      const target = e.target;
+      const typing =
+        target instanceof Element &&
+        target.closest("input, textarea, select, [contenteditable='true']");
+      if (
+        e.key === " " &&
+        !e.repeat &&
+        !e.ctrlKey &&
+        !e.metaKey &&
+        !e.altKey &&
+        !typing &&
+        !(target instanceof Element && target.closest("button, a")) &&
+        !voiceBlockedRef.current
+      ) {
+        e.preventDefault();
+        handleVoiceRef.current();
+        return;
+      }
+      if (typing) return;
       if (e.key === "n" || e.key === "N") {
         setIsCreatingFirstTask(true);
       }
@@ -804,6 +906,21 @@ const Dashboard = () => {
             <span>New Task</span>
           </button>
 
+          <button
+            type="button"
+            onClick={handleVoice}
+            aria-pressed={listening}
+            aria-label={listening ? "Stop voice input" : "Create a task by speaking"}
+            title={listening ? "Listening… click or press Space to stop" : "Create a task by speaking (Space)"}
+            className={`p-1.5 rounded-lg border text-lg transition ${
+              listening
+                ? "text-red-400 animate-pulse border-red-400/40 bg-red-500/10"
+                : "text-[#555] hover:text-[#aaa] border-zinc-800 hover:bg-zinc-900"
+            }`}
+          >
+            <MicIcon className="w-3.5 h-3.5" />
+          </button>
+
           {/* Focus Mode */}
           <button
             type="button"
@@ -961,6 +1078,15 @@ const Dashboard = () => {
           </div>
         </div>
       </header>
+
+      {listening && (
+        <div
+          role="status"
+          className="px-4 py-1.5 bg-red-500/10 border-b border-red-500/20 text-xs font-mono-code text-red-300"
+        >
+          Listening… say the task, then “high”, “medium”, or “low” priority. Press Space to stop.
+        </div>
+      )}
 
       {activeSprint && (
         <div className="flex items-center gap-2 px-4 py-2 bg-blue-500/5 border-b border-blue-500/15 text-xs font-mono-code">
@@ -1120,6 +1246,10 @@ const Dashboard = () => {
               <div className="flex items-center justify-between">
                 <span className="text-zinc-400">Create new task</span>
                 <kbd className="bg-zinc-900 border border-zinc-700 px-2 py-0.5 rounded text-zinc-200">N</kbd>
+              </div>
+              <div className="flex items-center justify-between gap-4">
+                <span className="text-zinc-400">Speak a task</span>
+                <kbd className="bg-zinc-900 border border-zinc-700 px-2 py-0.5 rounded text-zinc-200">Space</kbd>
               </div>
               <div className="flex items-center justify-between">
                 <span className="text-zinc-400">Search tasks</span>

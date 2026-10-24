@@ -31,6 +31,7 @@ import {
 import { openVisit, touchVisit } from "../utils/lastVisit";
 import { timeAgo } from "../utils/timeAgo";
 import { parseSpokenTask } from "../utils/voiceTask";
+import { exportBoardPdf } from "../utils/exportBoardPdf";
 
 const formatStars = (n) => {
   if (n === null || n === undefined) return null;
@@ -670,6 +671,15 @@ const Dashboard = () => {
     URL.revokeObjectURL(url);
   };
 
+  const handleExportPDF = () => {
+    try {
+      exportBoardPdf(tasks, { sprintName: activeSprint?.name });
+      toast.success("Board exported as PDF");
+    } catch {
+      toast.error("Couldn't export the board as PDF");
+    }
+  };
+
   const handleImportCSV = async (event) => {
     const file = event.target.files?.[0];
     event.target.value = "";
@@ -958,9 +968,20 @@ const Dashboard = () => {
             type="button"
             onClick={handleExportCSV}
             title="Export tasks as CSV"
+            aria-label="Export tasks as CSV"
             className="p-1.5 rounded-lg border border-zinc-800 text-zinc-400 hover:text-zinc-200 hover:bg-zinc-900 transition"
           >
             <DownloadIcon className="w-3.5 h-3.5" />
+          </button>
+
+          <button
+            type="button"
+            onClick={handleExportPDF}
+            title="Export board as PDF"
+            aria-label="Export board as PDF"
+            className="p-1.5 rounded-lg border border-zinc-800 text-zinc-400 hover:text-zinc-200 hover:bg-zinc-900 transition"
+          >
+            <PrinterIcon className="w-3.5 h-3.5" />
           </button>
 
           {/* Clear Done */}

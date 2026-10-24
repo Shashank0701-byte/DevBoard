@@ -27,6 +27,19 @@ const allowedOrigins = [
   process.env.FRONTEND_URL,
 ].filter(Boolean);
 
+// Vite moves to 5174, 5175, … when 5173 is already taken. A browser cannot
+// forge an Origin of localhost, so any local port is safe to allow.
+const isLocalDevOrigin = (origin) =>
+  /^https?:\/\/(localhost|127\.0\.0\.1)(:\d+)?$/.test(origin);
+
+const allowOrigin = (origin, callback) => {
+  if (!origin || allowedOrigins.includes(origin) || isLocalDevOrigin(origin)) {
+    callback(null, true);
+  } else {
+    callback(new Error("Not allowed by CORS"));
+  }
+};
+
 const limiter = rateLimit({
   windowMs: 15 * 60 * 1000,
   limit: 100,
@@ -37,7 +50,7 @@ const app = express();
 const server = http.createServer(app);
 
 const io = new Server(server, {
-  cors: { origin: "http://localhost:5173" },
+  cors: { origin: allowOrigin },
 });
 
 // Make io available to route handlers (req.app.get("io"))
@@ -49,13 +62,7 @@ app.use(helmet());
 
 app.use(
   cors({
-    origin: (origin, callback) => {
-      if (!origin || allowedOrigins.includes(origin)) {
-        callback(null, true);
-      } else {
-        callback(new Error("Not allowed by CORS"));
-      }
-    },
+    origin: allowOrigin,
     credentials: true,
     exposedHeaders: ["X-Response-Time"],
   }),

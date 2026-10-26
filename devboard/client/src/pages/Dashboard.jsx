@@ -386,6 +386,7 @@ const Dashboard = () => {
   const [showTop, setShowTop] = useState(false);
   const [isFullscreen, setIsFullscreen] = useState(false);
   const [isImporting, setIsImporting] = useState(false);
+  const [retroCopied, setRetroCopied] = useState(false);
   const csvInputRef = useRef(null);
   const [autoThemeEnabled, setAutoThemeEnabled] = useState(
     () => localStorage.getItem("board_auto_theme") === "true"
@@ -747,6 +748,60 @@ const Dashboard = () => {
     URL.revokeObjectURL(url);
   };
 
+  // Builds a sprint retrospective from the last 14 days of board data and
+  // copies it to the clipboard as markdown.
+  const generateRetro = async () => {
+    const twoWeeksAgo = new Date();
+    twoWeeksAgo.setDate(twoWeeksAgo.getDate() - 14);
+
+    const completed = tasks.filter(
+      (t) => t.status === "done" && new Date(t.updatedAt) > twoWeeksAgo,
+    );
+    const stuck = tasks.filter(
+      (t) =>
+        t.status === "inprogress" &&
+        Math.floor((Date.now() - new Date(t.updatedAt)) / 86400000) > 5,
+    );
+    const highDone = completed.filter((t) => t.priority === "high");
+
+    const retro = `# Sprint Retrospective 🔄
+Generated: ${new Date().toLocaleDateString()}
+
+## ✅ What went well
+
+- Completed ${completed.length} tasks this sprint
+- Closed ${highDone.length} high priority items
+${completed
+  .slice(0, 3)
+  .map((t) => `- ✓ ${t.title}`)
+  .join("\n")}
+
+## 🚧 What needs improvement
+
+${
+  stuck.length > 0
+    ? `- ${stuck.length} tasks stuck in progress >5 days`
+    : "- No stuck tasks this sprint! 🎉"
+}
+${stuck
+  .slice(0, 3)
+  .map((t) => `- ⚠️ ${t.title}`)
+  .join("\n")}
+
+## 🎯 Action items for next sprint
+
+- Review ${tasks.filter((t) => t.status === "backlog").length} backlog items
+- Prioritize blocked tasks first`;
+
+    try {
+      await navigator.clipboard.writeText(retro);
+      setRetroCopied(true);
+      setTimeout(() => setRetroCopied(false), 2000);
+    } catch {
+      toast.error("Could not copy the retro to the clipboard");
+    }
+  };
+
   const handleImportCSV = async (event) => {
     const file = event.target.files?.[0];
     event.target.value = "";
@@ -1034,6 +1089,16 @@ const Dashboard = () => {
             className="p-1.5 rounded-lg border border-zinc-800 text-zinc-400 hover:text-zinc-200 hover:bg-zinc-900 transition"
           >
             <DownloadIcon className="w-3.5 h-3.5" />
+          </button>
+
+          {/* Sprint retrospective generator */}
+          <button
+            type="button"
+            onClick={generateRetro}
+            title="Copy a sprint retrospective to the clipboard"
+            className="px-2.5 py-1.5 rounded-lg border border-zinc-800 text-xs text-zinc-400 hover:text-zinc-200 hover:bg-zinc-900 transition"
+          >
+            {retroCopied ? "✅ Copied!" : "📝 Generate Retro"}
           </button>
 
           {/* Clear Done */}
